@@ -24,6 +24,31 @@ int handle_whohas(int IP, short port, void *buf, size_t size)
 }
 
 /**
+ * This is called when you received a 'ihave' response.
+ *
+ * IP: the address who sent this
+ * buf: content
+ * size: size of buf
+ */
+int handle_ihave(int IP, short port, void *buf, size_t size)
+{
+	return HE_OK;
+}
+
+
+/**
+ * This is called when you received a 'get' request.
+ *
+ * IP: the address of sender
+ * buf: content
+ * size: size of buf
+ */
+int handle_get(int IP, short port, void *buf, size_t size)
+{
+	return HE_OK;
+}
+
+/**
  * This is called when you've successfully received
  * a chunk from one peer.
  *

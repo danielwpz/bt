@@ -14,6 +14,8 @@
  */
 int handle_cmd(char *cmd);
 int handle_whohas(int IP, short port, void *buf, size_t size);
+int handle_ihave(int IP, short port, void *buf, size_t size);
+int handle_get(int IP, short port, void *buf, size_t size);
 int handle_recv(int IP, short port, void *buf, size_t size);
 int handle_timer(int interval);
 

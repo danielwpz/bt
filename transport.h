@@ -18,6 +18,7 @@
 /**
  * function prototypes
  */
+int send_init(int peer_num, short port);
 int send_data(int IP, short port, void *buf, size_t size);
 int send_whohas(int IP, short port, void *buf, size_t size);
 int send_ihave(int IP, short port, void *buf, size_t size);
