@@ -112,7 +112,11 @@ static int recv_packet(packet_t *pkt, void *buf)
 	// check valid
 	if (pkt->header.magic != MAGIC_NUM ||
 		pkt->header.version != 1 ||
-		pkt->header.hdr_len != sizeof(packet_t)) {
+		pkt->header.hdr_len != sizeof(header_t)) {
+		Debug("magic:%d, ver:%d, hdr_len:%d\n",
+				pkt->header.magic,
+				pkt->header.version,
+				pkt->header.hdr_len);
 		return TE_PKT;
 	}	
 
@@ -302,6 +306,11 @@ void process_udp(int fd)
 				Debug("handle_get error %d\n", ret);
 			}
 		}else if (type == TYPE_DATA) {
+			ret = handle_recv(from_IP, from_port,
+					pkt.data, data_len);
+			if (ret < 0) {
+				Debug("handle_recv error %d\n", ret);
+			}
 		}else if (type == TYPE_ACK) {
 		}else {
 		}

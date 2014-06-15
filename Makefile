@@ -20,7 +20,13 @@ all: ${BINS} ${TESTBINS}
 run: peer_run
 	./peer_run
 
-test: peer_test
+test: test.c
+	mv test.c tmp.c
+	mv peer.c test.c
+	mv tmp.c peer.c
+	make all
+
+atest: peer_test
 	./peer_test
 
 peer: $(OBJS)

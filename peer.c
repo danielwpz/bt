@@ -4,6 +4,8 @@
  * Authors: Daniel
  *			Florrie
  *
+ * THIS IS A TEST FILE.
+ * 
  * Date:	2014-6
  */
 
@@ -26,8 +28,12 @@
 
 extern int kfd;
 
+/* for test */
+int cmdType = 0;
+
 void peer_run(bt_config_t *config);
 
+/* TEST DRIVER */
 int main(int argc, char **argv) {
 	bt_config_t config;
 
@@ -51,7 +57,14 @@ int main(int argc, char **argv) {
 #endif
 
 	/* TODO: fill in peers num and local port */
-	send_init(0, 11234);
+	int port;
+	int ret;
+	scanf("%d", &port);
+	ret = send_init(0, (short)port);
+	if (ret < 0) {
+		Debug("send_init error %d\n", ret);
+	}
+	Debug("start!\n");
 
 	peer_run(&config);
 	return 0;
@@ -102,15 +115,35 @@ void peer_run(bt_config_t *config) {
 		nfds = select(kfd+1, &readfds, NULL, NULL, NULL);
 
 		if (nfds > 0) {
+			Debug(">>>>>>>>>>>>>>\n");
+
 			if (FD_ISSET(kfd, &readfds)) {
 				process_udp(kfd);
 			}
 
 			if (FD_ISSET(STDIN_FILENO, &readfds)) {
-				n = read(STDIN_FILENO, buf, BUF_SIZE);
-				if (n > 0) {
-					buf[n] = '\0';
-					handle_cmd(buf);
+				int ret;
+				in_addr_t dIP = inet_addr("127.0.0.1");
+				short dport;
+				char buf[1024];
+				char data[1024];
+				ret = read(STDIN_FILENO, data, 1024);
+				data[ret] = '\0';
+				sscanf(data, "%d %s", &dport, buf);
+
+				cmdType = (cmdType + 1) % 4;
+				if (cmdType == 1) {
+					ret = send_whohas(dIP, dport, buf, strlen(buf));
+				}else if (cmdType == 2) {
+					ret = send_ihave(dIP, dport, buf, strlen(buf));
+				}else if (cmdType == 3) {
+					ret = send_get(dIP, dport, buf, strlen(buf));
+				}else if (cmdType == 0) {
+					ret = send_data(dIP, dport, buf, strlen(buf));
+				}
+
+				if (ret < 0) {
+					printf("error %d\n", ret);
 				}
 			}
 		}
