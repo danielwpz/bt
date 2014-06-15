@@ -6,11 +6,13 @@
 
 #ifdef DEBUG
 extern unsigned int debug;
+#define Debug(fmt, args...) DPRINTF(DEBUG_ERRS, fmt, ##args)
 #define DPRINTF(level, fmt, args...) \
         do { if (debug & (level)) fprintf(stderr, fmt , ##args ); } while(0)
 #define DEBUG_PERROR(errmsg) \
         do { if (debug & DEBUG_ERRS) perror(errmsg); } while(0)
 #else
+#define Debug(args...)
 #define DPRINTF(args...)
 #define DEBUG_PERROR(args...)
 #endif

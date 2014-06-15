@@ -18,7 +18,7 @@ int handle_cmd(char *cmd)
  * buf: the content of 'whohas'
  * size: the size of buf
  */
-int handle_whohas(int IP, short port, void *buf, size_t size)
+int handle_whohas(in_addr_t IP, short port, void *buf, size_t size)
 {
 	return HE_OK;
 }
@@ -30,7 +30,7 @@ int handle_whohas(int IP, short port, void *buf, size_t size)
  * buf: content
  * size: size of buf
  */
-int handle_ihave(int IP, short port, void *buf, size_t size)
+int handle_ihave(in_addr_t IP, short port, void *buf, size_t size)
 {
 	return HE_OK;
 }
@@ -43,7 +43,7 @@ int handle_ihave(int IP, short port, void *buf, size_t size)
  * buf: content
  * size: size of buf
  */
-int handle_get(int IP, short port, void *buf, size_t size)
+int handle_get(in_addr_t IP, short port, void *buf, size_t size)
 {
 	return HE_OK;
 }
@@ -56,7 +56,7 @@ int handle_get(int IP, short port, void *buf, size_t size)
  * buf: content
  * size: size of buf
  */
-int handle_recv(int IP, short port, void *buf, size_t size)
+int handle_recv(in_addr_t IP, short port, void *buf, size_t size)
 {
 	return HE_OK;
 }

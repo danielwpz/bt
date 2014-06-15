@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <netinet/in.h>
 
 #ifndef TRANSPORT_H
 #define TRANSPORT_H
@@ -8,6 +9,8 @@
  */
 #define TE_OK 0
 #define TE_INVAL -1
+#define TE_SIZE -2
+#define TE_SOCK -3
 
 /**
  * timer interval
@@ -19,9 +22,9 @@
  * function prototypes
  */
 int send_init(int peer_num, short port);
-int send_data(int IP, short port, void *buf, size_t size);
-int send_whohas(int IP, short port, void *buf, size_t size);
-int send_ihave(int IP, short port, void *buf, size_t size);
-int send_get(int IP, short port, void *buf, size_t size);
+int send_data(in_addr_t IP, short port, void *buf, size_t size);
+int send_whohas(in_addr_t IP, short port, void *buf, size_t size);
+int send_ihave(in_addr_t IP, short port, void *buf, size_t size);
+int send_get(in_addr_t IP, short port, void *buf, size_t size);
 
 #endif
