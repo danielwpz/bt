@@ -24,6 +24,8 @@
 
 #define BUF_SIZE 1024
 
+extern int kfd;
+
 void peer_run(bt_config_t *config);
 
 int main(int argc, char **argv) {
@@ -31,6 +33,7 @@ int main(int argc, char **argv) {
 
 	bt_init(&config, argc, argv);
 
+	debug = DEBUG_ALL;
 	DPRINTF(DEBUG_INIT, "peer.c main beginning\n");
 
 #ifdef TESTING
@@ -46,6 +49,9 @@ int main(int argc, char **argv) {
 		bt_dump_config(&config);
 	}
 #endif
+
+	/* TODO: fill in peers num and local port */
+	send_init(0, 11234);
 
 	peer_run(&config);
 	return 0;
@@ -68,27 +74,8 @@ void process_inbound_udp(int sock) {
 			buf);
 }
 
-void process_get(char *chunkfile, char *outputfile) {
-	printf("PROCESS GET SKELETON CODE CALLED.  Fill me in!  (%s, %s)\n", 
-			chunkfile, outputfile);
-}
-
-void handle_user_input(char *line, void *cbdata) {
-	char chunkf[128], outf[128];
-
-	bzero(chunkf, sizeof(chunkf));
-	bzero(outf, sizeof(outf));
-
-	if (sscanf(line, "GET %120s %120s", chunkf, outf)) {
-		if (strlen(outf) > 0) {
-			process_get(chunkf, outf);
-		}
-	}
-}
-
 
 void peer_run(bt_config_t *config) {
-	int sock;
 	int n;
 	struct sockaddr_in myaddr;
 	fd_set readfds;
@@ -100,33 +87,23 @@ void peer_run(bt_config_t *config) {
 		exit(-1);
 	}
 
-	if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP)) == -1) {
-		perror("peer_run could not create socket");
-		exit(-1);
-	}
-
+	// init spiffy
 	bzero(&myaddr, sizeof(myaddr));
 	myaddr.sin_family = AF_INET;
 	myaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	myaddr.sin_port = htons(config->myport);
-
-	if (bind(sock, (struct sockaddr *) &myaddr, sizeof(myaddr)) == -1) {
-		perror("peer_run could not bind socket");
-		exit(-1);
-	}
-
-	spiffy_init(config->identity, (struct sockaddr *)&myaddr, sizeof(myaddr));
+	//spiffy_init(config->identity, (struct sockaddr *)&myaddr, sizeof(myaddr));
 
 	while (1) {
 		int nfds;
 		FD_SET(STDIN_FILENO, &readfds);
-		FD_SET(sock, &readfds);
+		FD_SET(kfd, &readfds);
 
-		nfds = select(sock+1, &readfds, NULL, NULL, NULL);
+		nfds = select(kfd+1, &readfds, NULL, NULL, NULL);
 
 		if (nfds > 0) {
-			if (FD_ISSET(sock, &readfds)) {
-				process_inbound_udp(sock);
+			if (FD_ISSET(kfd, &readfds)) {
+				process_udp(kfd);
 			}
 
 			if (FD_ISSET(STDIN_FILENO, &readfds)) {
