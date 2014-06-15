@@ -1,4 +1,5 @@
 #include "transport.h"
+#include "handler.h"
 #include "chunk.h"
 #include "debug.h"
 #include <sys/types.h>
@@ -268,6 +269,9 @@ void process_udp(int fd)
 	fromlen = sizeof(fromaddr);
 	n = recvfrom(fd, buf, BUFLEN, 0,
 			(struct sockaddr *)&fromaddr, &fromlen);
+	if (n < 0) {
+		Debug("recvfrom error %d\n", n);
+	}
 
 	// handle packet
 	packet_t pkt;

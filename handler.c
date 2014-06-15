@@ -1,5 +1,9 @@
 #include "handler.h"
 #include "transport.h"
+#include "debug.h"
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 /**
  * Handle command from user. aka 'GET ....'
@@ -8,6 +12,10 @@
  */
 int handle_cmd(char *cmd)
 {
+	char *desc = "[hdl_cmd]";
+
+	Debug("%s%s\n", desc, cmd);
+
 	return HE_OK;
 }
 
@@ -20,6 +28,13 @@ int handle_cmd(char *cmd)
  */
 int handle_whohas(in_addr_t IP, short port, void *buf, size_t size)
 {
+	char *desc = "[hdl_whohas]";
+	struct in_addr addr = {IP};
+	char *IPStr = inet_ntoa(addr);
+
+	Debug("%s(%s, %d, %d)\n", desc, IPStr, port, (int)size);
+	Debug("%s\n", (char *)buf);
+
 	return HE_OK;
 }
 
@@ -32,6 +47,13 @@ int handle_whohas(in_addr_t IP, short port, void *buf, size_t size)
  */
 int handle_ihave(in_addr_t IP, short port, void *buf, size_t size)
 {
+	char *desc = "[hdl_ihave]";
+	struct in_addr addr = {IP};
+	char *IPStr = inet_ntoa(addr);
+
+	Debug("%s(%s, %d, %d)\n", desc, IPStr, port, (int)size);
+	Debug("%s\n", (char *)buf);
+
 	return HE_OK;
 }
 
@@ -45,6 +67,13 @@ int handle_ihave(in_addr_t IP, short port, void *buf, size_t size)
  */
 int handle_get(in_addr_t IP, short port, void *buf, size_t size)
 {
+	char *desc = "[hdl_get]";
+	struct in_addr addr = {IP};
+	char *IPStr = inet_ntoa(addr);
+
+	Debug("%s(%s, %d, %d)\n", desc, IPStr, port, (int)size);
+	Debug("%s\n", (char *)buf);
+
 	return HE_OK;
 }
 
@@ -58,6 +87,13 @@ int handle_get(in_addr_t IP, short port, void *buf, size_t size)
  */
 int handle_recv(in_addr_t IP, short port, void *buf, size_t size)
 {
+	char *desc = "[hdl_recv]";
+	struct in_addr addr = {IP};
+	char *IPStr = inet_ntoa(addr);
+
+	Debug("%s(%s, %d, %d)\n", desc, IPStr, port, (int)size);
+	Debug("%s\n", (char *)buf);
+
 	return HE_OK;
 }
 
@@ -69,5 +105,7 @@ int handle_recv(in_addr_t IP, short port, void *buf, size_t size)
  */
 int handle_timer(int interval)
 {
+	Debug("[hdl_timer]%d\n", interval);
+
 	return HE_OK;
 }
