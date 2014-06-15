@@ -1,4 +1,5 @@
 #include "transport.h"
+#include "chunk.h"
 #include "debug.h"
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -8,6 +9,13 @@
 
 #define DATA_SIZE 1000
 #define MAGIC_NUM 15441
+
+#define TYPE_WHOHAS	0
+#define TYPE_IHAVE	1
+#define TYPE_GET	2
+#define TYPE_DATA	3
+#define TYPE_ACK	4
+#define TYPE_DENIED	5
 
 /********************
  *  Data Structure  *
@@ -144,21 +152,99 @@ int send_init(int peer_num, short port)
 
 int send_data(in_addr_t IP, short port, void *buf, size_t size)
 {
+	int ret;
+	char *desc = "[send_data]";
+	/* Test mode
+	if (size != BT_CHUNK_SIZE) {
+		Debug("data size invalid %d\n", size);
+		return TE_SIZE;
+	}
+	*/
+	
+	// make packet
+	packet_t pkt;
+	ret = make_packet(&pkt, TYPE_DATA, 0, 0, buf, size);
+	if (ret < 0) {
+		Debug("%smake_packet error %d\n",desc, ret);
+		return ret;
+	}
+
+	// send packet
+	ret = send_packet(IP, port, &pkt);
+	if (ret < 0) {
+		Debug("%ssend_packet error %d\n",desc, ret);
+		return ret;
+	}	
+
 	return TE_OK;
 }
 
 int send_whohas(in_addr_t IP, short port, void *buf, size_t size)
 {
+	int ret;
+	char *desc = "[send_whohas]";
+
+	// make packet
+	packet_t pkt;
+	ret = make_packet(&pkt, TYPE_WHOHAS, 0, 0, buf, size);
+	if (ret < 0) {
+		Debug("%smake_packet error %d\n", desc, ret);
+		return ret;
+	}
+
+	// send packet
+	ret = send_packet(IP, port, &pkt);
+	if (ret < 0) {
+		Debug("%ssend_packet error %d\n", desc, ret);
+		return ret;
+	}
+
 	return TE_OK;
 }
 
 int send_ihave(in_addr_t IP, short port, void *buf, size_t size)
 {
+	int ret;
+	char *desc = "[send_ihave]";
+
+	// make packet
+	packet_t pkt;
+	ret = make_packet(&pkt, TYPE_IHAVE, 0, 0, buf, size);
+	if (ret < 0) {
+		Debug("%smake_packet error %d\n", desc, ret);
+		return ret;
+	}
+
+	// send packet
+	ret = send_packet(IP, port, &pkt);
+	if (ret < 0) {
+		Debug("%ssend_packet error %d\n", desc, ret);
+		return ret;
+	}
+
 	return TE_OK;
 }
 
 int send_get(in_addr_t IP, short port, void *buf, size_t size)
 {
+	int ret;
+	char *desc = "[send_get]";
+
+	// make packet
+	packet_t pkt;
+	ret = make_packet(&pkt, TYPE_GET, 0, 0, buf, size);
+	if (ret < 0) {
+		Debug("%smake_packet error %d\n", desc, ret);
+		return ret;
+	}
+
+	// send packet
+	ret = send_packet(IP, port, &pkt);
+	if (ret < 0) {
+		Debug("%ssend_packet error %d\n", desc, ret);
+		return ret;
+	}
+
 	return TE_OK;
 }
 
@@ -168,7 +254,7 @@ int send_get(in_addr_t IP, short port, void *buf, size_t size)
 void process_udp(int fd)
 {
 #define BUFLEN 1500
-	int n;
+	int n, ret;
 	struct sockaddr_in fromaddr;
 	socklen_t fromlen;
 	char buf[BUFLEN];
@@ -188,13 +274,35 @@ void process_udp(int fd)
 	int pkt_len = recv_packet(&pkt, buf);
 
 	if (pkt_len > 0) {
+		int data_len = pkt_len - pkt.header.hdr_len;
 		short from_port = ntohs(fromaddr.sin_port);
 		in_addr_t from_IP = fromaddr.sin_addr.s_addr;
 		char type = pkt.header.type;
 
-		//TODO: handle each type
+		if (type == TYPE_WHOHAS) {
+			ret = handle_whohas(from_IP, from_port,
+					pkt.data, data_len);
+			if (ret < 0) {
+				Debug("handle_whohas error %d\n", ret);
+			}
+		}else if (type == TYPE_IHAVE) {
+			ret = handle_ihave(from_IP, from_port,
+					pkt.data, data_len);
+			if (ret < 0) {
+				Debug("handle_ihave error %d\n", ret);
+			}
+		}else if (type == TYPE_GET) {
+			ret = handle_get(from_IP, from_port,
+					pkt.data, data_len);
+			if (ret < 0) {
+				Debug("handle_get error %d\n", ret);
+			}
+		}else if (type == TYPE_DATA) {
+		}else if (type == TYPE_ACK) {
+		}else {
+		}
 
 	}else {
-		Debug("recv_packet error.\n");
+		Debug("recv_packet error %d\n", pkt_len);
 	}
 }

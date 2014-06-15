@@ -16,8 +16,8 @@
 /**
  * timer interval
  */
-#define SELECT_TICK 2
-#define SECOND_TICK 20
+#define SELECT_TICK 10
+#define SECOND_TICK 1000
 
 /**
  * function prototypes
