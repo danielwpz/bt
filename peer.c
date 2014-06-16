@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
 	int port;
 	int ret;
 	scanf("%d", &port);
-	ret = send_init(0, (short)port);
+	ret = send_init(1, (short)port);
 	if (ret < 0) {
 		Debug("send_init error %d\n", ret);
 	}
@@ -87,11 +87,15 @@ void process_inbound_udp(int sock) {
 			buf);
 }
 
+void anounce_timeout(int interval) {
+	process_timer(interval);
+}
 
 void peer_run(bt_config_t *config) {
 	int n;
 	struct sockaddr_in myaddr;
 	fd_set readfds;
+	struct timeval tv;
 	struct user_iobuf *userbuf;
 	char buf[BUF_SIZE];
 
@@ -109,13 +113,16 @@ void peer_run(bt_config_t *config) {
 
 	while (1) {
 		int nfds;
+		FD_ZERO(&readfds);
 		FD_SET(STDIN_FILENO, &readfds);
 		FD_SET(kfd, &readfds);
 
-		nfds = select(kfd+1, &readfds, NULL, NULL, NULL);
+		tv.tv_sec = 1;
+		tv.tv_usec = 0;
+
+		nfds = select(kfd+1, &readfds, NULL, NULL, &tv);
 
 		if (nfds > 0) {
-			Debug(">>>>>>>>>>>>>>\n");
 
 			if (FD_ISSET(kfd, &readfds)) {
 				process_udp(kfd);
@@ -130,8 +137,20 @@ void peer_run(bt_config_t *config) {
 				ret = read(STDIN_FILENO, data, 1024);
 				data[ret] = '\0';
 				sscanf(data, "%d %s", &dport, buf);
+				char *tmpbuf = malloc(512 * 1024);
 
+				for (i = 0; i < strlen(buf); i++) {
+					tmpbuf[i] = buf[i];
+				}
+				for (i = 0; i < 512 * 1024; i++) {
+					tmpbuf[i] = i % 32;
+				}
+
+				ret = send_data(dIP, dport, tmpbuf, 512 * 1024);
+
+				/*
 				cmdType = (cmdType + 1) % 4;
+
 				if (cmdType == 1) {
 					ret = send_whohas(dIP, dport, buf, strlen(buf));
 				}else if (cmdType == 2) {
@@ -141,11 +160,15 @@ void peer_run(bt_config_t *config) {
 				}else if (cmdType == 0) {
 					ret = send_data(dIP, dport, buf, strlen(buf));
 				}
+				*/
 
 				if (ret < 0) {
 					printf("error %d\n", ret);
 				}
 			}
+			anounce_timeout(SELECT_TICK);
+		}else if (nfds == 0) {
+			anounce_timeout(SECOND_TICK);
 		}
 	}
 }

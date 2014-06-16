@@ -209,6 +209,7 @@ static void init_send_state(state_t *state,
 	if (size % DATA_SIZE) {
 		state->max_seq++;
 	}
+	state->max_seq--;	// actual seq begins from 0
 
 	// set up send field
 	state->sws = INIT_SWS;
@@ -240,6 +241,7 @@ static void init_recv_state(state_t *state,
 	if (size % DATA_SIZE) {
 		state->max_seq++;
 	}
+	state->max_seq--;	// actual seq begins from 0
 
 	// set up receiver field
 	state->lrf = -1;
@@ -303,6 +305,8 @@ static int send_frag(state_t *state, int i)
 		return ret;
 	}
 
+	reset_timer(state, i);
+
 	return TE_OK;
 }	
 
@@ -323,13 +327,40 @@ static int send_to_up(state_t *state)
 			Debug("[send_to_up]send_frag error %d\n", ret);
 			return ret;
 		}
-		reset_timer(state, i);
 	}
 
 	state->lfs = upper;
 
 	return TE_OK;
 }
+
+static int reply_ack(in_addr_t IP, 
+		short port, 
+		int ack_num, 
+		state_t *state)
+{
+	char *desc = "[reply_ack]";
+	int ret;
+
+	packet_t pkt;
+	ret = make_packet(&pkt, TYPE_ACK, -1, ack_num, NULL, 0);
+	if (ret < 0) {
+		Debug("%smake_packet error %d\n", desc, ret);
+		return ret;
+	}
+
+	ret = send_packet(IP, port, &pkt);
+	if (ret < 0) {
+		Debug("%ssend ack packet error %d\n", desc, ret);
+		return ret;
+	}
+
+	// reset ack timeout
+	state->ack_timeout = REACK_TIME;
+
+	return TE_OK;
+}
+
 
 /**
  * Interface function of transport layer
@@ -540,6 +571,7 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
 
 	// receive expected
 	if (seq_num == state->lrf + 1) {
+		// record data
 		memcpy((state->data + (seq_num * DATA_SIZE)),
 				pkt->data,
 				(pkt->header.pkt_len - pkt->header.hdr_len));
@@ -547,26 +579,22 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
 		state->lrf = seq_num;
 
 		// reply ack
-		packet_t pkt;
-		ret = make_packet(&pkt, TYPE_ACK, -1, seq_num, NULL, 0);
+		ret = reply_ack(IP, port, seq_num, state);
 		if (ret < 0) {
-			Debug("%smake_packet error %d\n", desc, ret);
+			Debug("%sreply_ack error %d\n", desc, ret);
 			return ret;
 		}
-
-		ret = send_packet(IP, port, &pkt);
-		if (ret < 0) {
-			Debug("%ssend ack packet error %d\n", desc, ret);
-			return ret;
-		}
-
-		// reset ack timeout
-		state->ack_timeout = REACK_TIME;
 
 		// check finish
 		if (seq_num == state->max_seq) {
 			// TODO finish
 			// deinit state after upper level get data
+			ret = handle_recv(IP, port, state->data, BT_CHUNK_SIZE);
+			if (ret < 0) {
+				Debug("%shandle_recv error %d\n", desc, ret);
+				return ret;
+			}
+			deinit_state(state);
 		}
 	}
 
@@ -576,6 +604,11 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
 /**
  * Interfaces to under layer
  */
+void process_timer(int interval)
+{
+	handle_timer(interval);
+}
+
 void process_udp(int fd)
 {
 #define BUFLEN 1500

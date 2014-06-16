@@ -105,7 +105,5 @@ int handle_recv(in_addr_t IP, short port, void *buf, size_t size)
  */
 int handle_timer(int interval)
 {
-	Debug("[hdl_timer]%d\n", interval);
-
 	return HE_OK;
 }

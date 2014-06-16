@@ -35,5 +35,6 @@ int send_ihave(in_addr_t IP, short port, void *buf, size_t size);
 int send_get(in_addr_t IP, short port, void *buf, size_t size);
 
 void process_udp(int fd);
+void process_timer(int interval);
 
 #endif
