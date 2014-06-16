@@ -122,7 +122,7 @@ void peer_run(bt_config_t *config) {
 			}
 
 			if (FD_ISSET(STDIN_FILENO, &readfds)) {
-				int ret;
+				int i, ret;
 				in_addr_t dIP = inet_addr("127.0.0.1");
 				short dport;
 				char buf[1024];

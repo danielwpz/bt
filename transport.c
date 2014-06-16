@@ -7,8 +7,14 @@
 #include <string.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <stdlib.h>
 
 #define DATA_SIZE 1000
+
+#define INIT_SWS  4
+#define RESEND_TIME	(2 * SECOND_TICK)
+#define REACK_TIME	(2 * SECOND_TICK)
+
 #define MAGIC_NUM 15441
 
 #define TYPE_WHOHAS	0
@@ -38,13 +44,36 @@ struct _PACKET {
 };
 typedef struct _PACKET packet_t;
 
+struct _STATE {
+	// general info
+	in_addr_t IP;
+	short port;
+	int id;			/* Positive for sender, negative for receiver */
+	// general data
+	void *data;		/* SHOULD be chunk size (512 * 1024) */
+	int max_seq;	/* Maximum sequence number */
+	// sender
+	int sws;		/* Send Window Size */
+	int laf;		/* Last ACK	Frame */
+	int lfs;		/* Last Frame Sent */
+	int *timeout_list;
+	// receiver
+	int lrf;		/* Last Received Frame */
+	int ack_timeout;
+};
+typedef struct _STATE state_t;
+	
 
 /********************
  * Global Variables *
  ********************/
 short kPort;	// local server port
-int kPeerNum;	// number of known peers
 int kfd;		// udp socket fd
+int kpeer_num;	// number of all other peers
+state_t *kstates_list;	// list of all state structures
+int kid = 1;	// id for state
+
+#define MIN(x, y) ((x) > (y)? (y) : (x))
 
 /**
  * functions to handle packet
@@ -65,7 +94,9 @@ static int make_packet(packet_t *pkt, short type,
 	pkt->header.seq_num = seq;
 	pkt->header.ack_num = ack;
 
-	memcpy(pkt->data, buf, len);
+	if (buf) {
+		memcpy(pkt->data, buf, len);
+	}
 	// after this point, buf could be freed
 
 	return TE_OK;
@@ -128,13 +159,187 @@ static int recv_packet(packet_t *pkt, void *buf)
 }
 
 /**
+ * state functions
+ */
+static state_t *search_state(in_addr_t IP, short port)
+{
+	int i;
+	state_t *result = NULL;
+
+	for (i = 0; i < kpeer_num; i++) {
+		if (kstates_list[i].IP == IP 
+				&& kstates_list[i].port == port) {
+			result = &kstates_list[i];
+			break;
+		}
+	}
+
+	return result;
+}
+
+static state_t *find_free_state()
+{
+	int i;
+	state_t *result = NULL;
+
+	for (i = 0; i < kpeer_num; i++) {
+		if (kstates_list[i].IP == 0
+				&& kstates_list[i].port == 0) {
+			result = &kstates_list[i];
+			break;
+		}
+	}
+
+	return result;
+}
+
+static void init_send_state(state_t *state, 
+		in_addr_t IP, 
+		short port, 
+		void *buf, 
+		size_t size)
+{
+	// set up general info
+	state->IP = IP;
+	state->port = port;
+	state->id = kid++;
+
+	// set up max seq
+	state->max_seq = size / DATA_SIZE;
+	if (size % DATA_SIZE) {
+		state->max_seq++;
+	}
+
+	// set up send field
+	state->sws = INIT_SWS;
+	state->laf = -1;
+	state->lfs = -1;
+	state->timeout_list = (int *)malloc(state->max_seq * sizeof(int));
+
+	// set up data
+	state->data = malloc(size);
+	if (state->data == NULL) {
+		Debug("[init_send_state]malloc data failed\n");
+		return;
+	}
+	memcpy(state->data, buf, size);
+}
+
+static void init_recv_state(state_t *state,
+		in_addr_t IP,
+		short port,
+		size_t size)
+{
+	// set up general info
+	state->IP = IP;
+	state->port = port;
+	state->id = -kid++;
+
+	// set up max seq
+	state->max_seq = size / DATA_SIZE;
+	if (size % DATA_SIZE) {
+		state->max_seq++;
+	}
+
+	// set up receiver field
+	state->lrf = -1;
+	state->ack_timeout = 999999;
+
+	// set up data
+	state->data = malloc(size);
+	if (state->data == NULL) {
+		Debug("[init_recv_state]malloc data failed\n");
+		return;
+	}
+}
+
+static void deinit_state(state_t *state)
+{
+	state->IP = 0;
+	state->port = 0;
+
+	if (state->id > 0) {
+		free(state->timeout_list);
+	}
+
+	free(state->data);
+
+	state->id = 0;
+}
+
+/**
+ * sender side functions
+ */
+static void reset_timer(state_t *state, int i)
+{
+	state->timeout_list[i] = RESEND_TIME;
+}
+
+static int send_frag(state_t *state, int i)
+{
+	int len;
+	int ret;
+
+	// calculate length to send
+	if ((i + 1) * DATA_SIZE < BT_CHUNK_SIZE) {
+		len = DATA_SIZE;
+	}else {
+		len = BT_CHUNK_SIZE - (i * DATA_SIZE);
+	}
+
+	// make packet
+	packet_t pkt;
+	ret = make_packet(&pkt, TYPE_DATA, i, 0,
+		state->data + (i * DATA_SIZE), len);
+	if (ret < 0) {
+		Debug("[send_frag]make_packet error %d\n", ret);
+		return ret;
+	}
+
+	// send packet
+	ret = send_packet(state->IP, state->port, &pkt);
+	if (ret < 0) {
+		Debug("[send_frag]send_packet error %d\n", ret);
+		return ret;
+	}
+
+	return TE_OK;
+}	
+
+static int send_to_up(state_t *state)
+{
+	int i, ret;
+	int lower = state->lfs + 1;
+	int upper = MIN(state->max_seq, (state->laf + state->sws));
+
+	if (upper < lower && (lower <= state->max_seq)) {
+		// TODO: dump_state(state);
+		return TE_WIN;
+	}
+
+	for (i = lower; i <= upper; i++) {
+		ret = send_frag(state, i);
+		if (ret < 0) {
+			Debug("[send_to_up]send_frag error %d\n", ret);
+			return ret;
+		}
+		reset_timer(state, i);
+	}
+
+	state->lfs = upper;
+
+	return TE_OK;
+}
+
+/**
  * Interface function of transport layer
  * used by upper layer
  */
 int send_init(int peer_num, short port)
 {
+	int i;
 	kPort = port;
-	kPeerNum = peer_num;
+	kpeer_num = peer_num;
 
 	// init udp socket
 	struct sockaddr_in addr;
@@ -152,6 +357,19 @@ int send_init(int peer_num, short port)
 		return TE_SOCK;
 	}
 
+	// init states_list
+	kstates_list = (state_t *)malloc(peer_num * sizeof(state_t));
+	if (kstates_list == NULL) {
+		Debug("malloc kstates_list failed.\n");
+		return TE_MEM;
+	}
+	
+	for (i = 0; i < peer_num; i++) {
+		kstates_list[i].IP = 0;
+		kstates_list[i].port = 0;
+		kstates_list[i].id = 0;
+	}
+
 	return TE_OK;
 }
 
@@ -159,6 +377,8 @@ int send_data(in_addr_t IP, short port, void *buf, size_t size)
 {
 	int ret;
 	char *desc = "[send_data]";
+	state_t *state;
+
 	/* Test mode
 	if (size != BT_CHUNK_SIZE) {
 		Debug("data size invalid %d\n", size);
@@ -166,20 +386,28 @@ int send_data(in_addr_t IP, short port, void *buf, size_t size)
 	}
 	*/
 	
-	// make packet
-	packet_t pkt;
-	ret = make_packet(&pkt, TYPE_DATA, 0, 0, buf, size);
-	if (ret < 0) {
-		Debug("%smake_packet error %d\n",desc, ret);
-		return ret;
+	// check whether there is come connections with
+	// given peer
+	state = search_state(IP, port);
+	if (state) {
+		Debug("%salready connect with %d:%d\n",desc, IP, port);
+		return TE_ALREADY;
 	}
 
-	// send packet
-	ret = send_packet(IP, port, &pkt);
+	// use a new state
+	state = find_free_state();
+	if (state == NULL) {
+		Debug("%sNO empty state\n", desc);
+		return TE_FULL;
+	}
+
+	init_send_state(state, IP, port, buf, size);
+
+	ret = send_to_up(state);
 	if (ret < 0) {
-		Debug("%ssend_packet error %d\n",desc, ret);
+		Debug("%ssend_to_up error %d\n", desc, ret);
 		return ret;
-	}	
+	}
 
 	return TE_OK;
 }
@@ -254,6 +482,98 @@ int send_get(in_addr_t IP, short port, void *buf, size_t size)
 }
 
 /**
+ * inter-communication handler
+ */
+static int on_ack(in_addr_t IP, short port, packet_t *pkt)
+{
+	int ret;
+	int ack_num = pkt->header.ack_num;
+
+	state_t *state = search_state(IP, port);
+	if (state == NULL) {
+		return TE_NOSTATE;
+	}
+
+	if (ack_num <= state->laf) {
+		return TE_OLDACK;
+	}else {
+		// update laf
+		state->laf = ack_num;
+	}
+
+	if (ack_num == state->max_seq) {
+		// TODO finish send
+		deinit_state(state);
+		return TE_OK;
+	}
+
+	ret = send_to_up(state);
+	if (ret < 0) {
+		Debug("[on_ack]send_to_up error %d\n", ret);
+		return ret;
+	}
+
+	return TE_OK;
+}
+
+static int on_data(in_addr_t IP, short port, packet_t *pkt)
+{
+	int ret;
+	char *desc = "[on_data]";
+	int seq_num = pkt->header.seq_num;
+	state_t *state = search_state(IP, port);
+
+	if (seq_num > 0 && state == NULL) {
+		return TE_NOSTATE;
+	}
+
+	// first data pkt
+	if (seq_num == 0 && state == NULL) {
+		state = find_free_state();
+		if (state == NULL) {
+			Debug("%son free state\n", desc);
+			return TE_FULL;
+		}
+
+		init_recv_state(state, IP, port, BT_CHUNK_SIZE);
+	}
+
+	// receive expected
+	if (seq_num == state->lrf + 1) {
+		memcpy((state->data + (seq_num * DATA_SIZE)),
+				pkt->data,
+				(pkt->header.pkt_len - pkt->header.hdr_len));
+		// update lrf
+		state->lrf = seq_num;
+
+		// reply ack
+		packet_t pkt;
+		ret = make_packet(&pkt, TYPE_ACK, -1, seq_num, NULL, 0);
+		if (ret < 0) {
+			Debug("%smake_packet error %d\n", desc, ret);
+			return ret;
+		}
+
+		ret = send_packet(IP, port, &pkt);
+		if (ret < 0) {
+			Debug("%ssend ack packet error %d\n", desc, ret);
+			return ret;
+		}
+
+		// reset ack timeout
+		state->ack_timeout = REACK_TIME;
+
+		// check finish
+		if (seq_num == state->max_seq) {
+			// TODO finish
+			// deinit state after upper level get data
+		}
+	}
+
+	return TE_OK;
+}
+
+/**
  * Interfaces to under layer
  */
 void process_udp(int fd)
@@ -306,13 +626,17 @@ void process_udp(int fd)
 				Debug("handle_get error %d\n", ret);
 			}
 		}else if (type == TYPE_DATA) {
-			ret = handle_recv(from_IP, from_port,
-					pkt.data, data_len);
+			ret = on_data(from_IP, from_port, &pkt);
 			if (ret < 0) {
-				Debug("handle_recv error %d\n", ret);
+				Debug("on_data error %d\n", ret);
 			}
 		}else if (type == TYPE_ACK) {
+			ret = on_ack(from_IP, from_port, &pkt);
+			if (ret < 0) {
+				Debug("on_ack error %d\n", ret);
+			}
 		}else {
+			Debug("unknown TYPE:%d\n", type);
 		}
 
 	}else {

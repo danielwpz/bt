@@ -12,6 +12,12 @@
 #define TE_SIZE -2
 #define TE_SOCK -3	/* establish socket error (bind or socket) */
 #define TE_PKT  -4	/* packet magic or version or hdr_len is invalid */
+#define TE_MEM	-5	/* malloc or other memory error */
+#define TE_ALREADY	-6	/* duplicated connections via send_data */
+#define TE_FULL	-7	/* no empty state to use */
+#define TE_WIN	-8	/* window size error */
+#define TE_NOSTATE	-9	/* get ack or data but not find its state */
+#define TE_OLDACK	-10	/* received ack is older than laf */
 
 /**
  * timer interval
