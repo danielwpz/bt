@@ -12,8 +12,11 @@
 #define DATA_SIZE 1000
 
 #define INIT_SWS  4
-#define RESEND_TIME	(20 * SECOND_TICK)
+
+#define RESEND_TIME	(2 * SECOND_TICK)
 #define REACK_TIME	(2 * SECOND_TICK)
+
+#define MAX_ERR_CNT 7
 
 #define MAGIC_NUM 15441
 
@@ -52,6 +55,7 @@ struct _STATE {
 	// general data
 	void *data;		/* SHOULD be chunk size (512 * 1024) */
 	int max_seq;	/* Maximum sequence number */
+	int err_cnt;	/* Count for error times */
 	// sender
 	int sws;		/* Send Window Size */
 	int laf;		/* Last ACK	Frame */
@@ -204,6 +208,7 @@ static void init_send_state(state_t *state,
 	state->IP = IP;
 	state->port = port;
 	state->id = kid++;
+	state->err_cnt = 0;
 
 	// set up max seq
 	state->max_seq = size / DATA_SIZE;
@@ -237,6 +242,7 @@ static void init_recv_state(state_t *state,
 	state->IP = IP;
 	state->port = port;
 	state->id = -kid++;
+	state->err_cnt = 0;
 
 	// set up max seq
 	state->max_seq = size / DATA_SIZE;
@@ -527,6 +533,10 @@ static int on_ack(in_addr_t IP, short port, packet_t *pkt)
 		return TE_NOSTATE;
 	}
 
+	// since the receiver is still alive,
+	// we reset err_cnt
+	state->err_cnt = 0;
+
 	if (ack_num < state->laf) {
 		return TE_OLDACK;
 	}
@@ -588,6 +598,10 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
 		init_recv_state(state, IP, port, BT_CHUNK_SIZE);
 	}
 
+	// since the sender is still alive,
+	// we reset the err_cnt
+	state->err_cnt = 0;
+
 	// receive expected
 	if (seq_num == state->lrf + 1) {
 		// TEST
@@ -631,6 +645,22 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
 	return TE_OK;
 }
 
+
+/**
+ * General failure check here.
+ * Change the congestion state or up-call user
+ */
+static void check_error(state_t *state)
+{
+	state->err_cnt++;
+	if (state->err_cnt > MAX_ERR_CNT) {
+		Debug("[check_error] %d:%d fail.\n", state->IP, state->port);
+		handle_failure(state->IP, state->port);
+		// TODO tear down state
+		deinit_state(state);
+	}
+}
+
 /**
  * Interfaces to under layer
  */
@@ -644,6 +674,7 @@ void process_timer(int interval)
 	for (i = 0; i < kpeer_num; i++) {
 		// check if state[i] is valid
 		if (kstates_list[i].IP && kstates_list[i].port) {
+			int has_error = 0;
 
 			if (kstates_list[i].id > 0) {	// sender
 				from = kstates_list[i].laf + 1;
@@ -657,6 +688,7 @@ void process_timer(int interval)
 						// TEST
 						Debug("%sresend data %d\n", desc, j);
 
+						has_error = 1;
 						ret = send_frag(&kstates_list[i], j);
 						if (ret < 0) {
 							Debug("%ssend_frag error %d\n", desc, ret);
@@ -669,6 +701,7 @@ void process_timer(int interval)
 				kstates_list[i].ack_timeout -= interval;
 
 				if (kstates_list[i].ack_timeout <= 0) {
+					has_error = 1;
 					// resend ack
 					in_addr_t IP = kstates_list[i].IP;
 					short port = kstates_list[i].port;
@@ -688,6 +721,10 @@ void process_timer(int interval)
 				// valid state but id == 0
 				Debug("%sid == 0\n", desc);
 				return;
+			}
+
+			if (has_error) {
+				check_error(&kstates_list[i]);
 			}
 		}
 	}

@@ -19,5 +19,6 @@ int handle_ihave(in_addr_t IP, short port, void *buf, size_t size);
 int handle_get(in_addr_t IP, short port, void *buf, size_t size);
 int handle_recv(in_addr_t IP, short port, void *buf, size_t size);
 int handle_timer(int interval);
+int handle_failure(in_addr_t IP, short port);
 
 #endif

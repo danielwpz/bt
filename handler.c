@@ -107,3 +107,20 @@ int handle_timer(int interval)
 {
 	return HE_OK;
 }
+
+/**
+ * This is called when a peer, either you send data
+ * to it or it receives data from you, has crushed.
+ *
+ * IP: the address of who has failed to connect
+ */
+int handle_failure(in_addr_t IP, short port)
+{
+	char *desc = "[hdl_failure]";
+	struct in_addr addr = {IP};
+	char *IPStr = inet_ntoa(addr);
+
+	Debug("%s(%s, %d)\n", desc, IPStr, port);
+
+	return HE_OK;
+}
