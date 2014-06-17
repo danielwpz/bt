@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
 	int port;
 	int ret;
 	scanf("%d", &port);
-	ret = send_init(1, (short)port);
+	ret = send_init(4, (short)port);
 	if (ret < 0) {
 		Debug("send_init error %d\n", ret);
 	}
@@ -142,8 +142,8 @@ void peer_run(bt_config_t *config) {
 				for (i = 0; i < strlen(buf); i++) {
 					tmpbuf[i] = buf[i];
 				}
-				for (i = 0; i < 512 * 1024; i++) {
-					tmpbuf[i] = i % 32;
+				for (; i < 512 * 1024; i++) {
+					tmpbuf[i] = 0;
 				}
 
 				ret = send_data(dIP, dport, tmpbuf, 512 * 1024);

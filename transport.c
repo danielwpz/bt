@@ -12,7 +12,7 @@
 #define DATA_SIZE 1000
 
 #define INIT_SWS  4
-#define RESEND_TIME	(2 * SECOND_TICK)
+#define RESEND_TIME	(20 * SECOND_TICK)
 #define REACK_TIME	(2 * SECOND_TICK)
 
 #define MAGIC_NUM 15441
@@ -56,6 +56,7 @@ struct _STATE {
 	int sws;		/* Send Window Size */
 	int laf;		/* Last ACK	Frame */
 	int lfs;		/* Last Frame Sent */
+	int lack_cnt;	/* Count for lack */
 	int *timeout_list;
 	// receiver
 	int lrf;		/* Last Received Frame */
@@ -215,6 +216,7 @@ static void init_send_state(state_t *state,
 	state->sws = INIT_SWS;
 	state->laf = -1;
 	state->lfs = -1;
+	state->lack_cnt = 0;
 	state->timeout_list = (int *)malloc(state->max_seq * sizeof(int));
 
 	// set up data
@@ -525,17 +527,34 @@ static int on_ack(in_addr_t IP, short port, packet_t *pkt)
 		return TE_NOSTATE;
 	}
 
-	if (ack_num <= state->laf) {
+	if (ack_num < state->laf) {
 		return TE_OLDACK;
-	}else {
-		// update laf
-		state->laf = ack_num;
 	}
 
 	if (ack_num == state->max_seq) {
 		// TODO finish send
+		Debug("[on_ack]send finish!(%d:%d)\n", IP, port);
 		deinit_state(state);
 		return TE_OK;
+	}
+
+	// check last ack
+	if (state->laf == ack_num) {
+		state->lack_cnt++;
+
+		// fast resend
+		if (state->lack_cnt >= 2) {
+			// reset lfs to resend
+			// TEST
+			Debug("[on_ack]resend data %d\n", ack_num);
+			state->lfs = ack_num;
+		}else {
+			// duplicate ACKs but no need to resend
+			return TE_OK;
+		}
+	}else {
+		state->laf = ack_num;
+		state->lack_cnt = 0;
 	}
 
 	ret = send_to_up(state);
@@ -571,12 +590,20 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
 
 	// receive expected
 	if (seq_num == state->lrf + 1) {
+		// TEST
+		// no reply ack
+		static int a = 0;
+		if (seq_num % 64 == 2 && a == 0) {
+			a++;
+			return 0;
+		}else {
+			a = 0;
+		}
+
 		// record data
 		memcpy((state->data + (seq_num * DATA_SIZE)),
 				pkt->data,
 				(pkt->header.pkt_len - pkt->header.hdr_len));
-		// update lrf
-		state->lrf = seq_num;
 
 		// reply ack
 		ret = reply_ack(IP, port, seq_num, state);
@@ -584,6 +611,9 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
 			Debug("%sreply_ack error %d\n", desc, ret);
 			return ret;
 		}
+
+		// update lrf
+		state->lrf = seq_num;
 
 		// check finish
 		if (seq_num == state->max_seq) {
@@ -606,6 +636,63 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
  */
 void process_timer(int interval)
 {
+	int i, j, ret;
+	int from, to;
+	char *desc = "[process_timer]";
+
+	// tranverse states list, update timer
+	for (i = 0; i < kpeer_num; i++) {
+		// check if state[i] is valid
+		if (kstates_list[i].IP && kstates_list[i].port) {
+
+			if (kstates_list[i].id > 0) {	// sender
+				from = kstates_list[i].laf + 1;
+				to = kstates_list[i].lfs;
+
+				for (j = from; j <= to; j++) {
+					// update timer for jth frame
+					kstates_list[i].timeout_list[j] -= interval;
+					if (kstates_list[i].timeout_list[j] <= 0) {
+						// resend frame
+						// TEST
+						Debug("%sresend data %d\n", desc, j);
+
+						ret = send_frag(&kstates_list[i], j);
+						if (ret < 0) {
+							Debug("%ssend_frag error %d\n", desc, ret);
+							return;
+						}
+					}
+				}
+
+			}else if (kstates_list[i].id < 0) {	// receiver
+				kstates_list[i].ack_timeout -= interval;
+
+				if (kstates_list[i].ack_timeout <= 0) {
+					// resend ack
+					in_addr_t IP = kstates_list[i].IP;
+					short port = kstates_list[i].port;
+					int ack_num = kstates_list[i].lrf;
+					// TEST
+					Debug("%sresend ack %d\n", desc, ack_num);
+
+					ret = reply_ack(IP, port, ack_num, 
+							&kstates_list[i]);
+					if (ret < 0) {
+						Debug("%sreply_ack error %d\n", desc, ret);
+						return;
+					}
+				}
+
+			}else {
+				// valid state but id == 0
+				Debug("%sid == 0\n", desc);
+				return;
+			}
+		}
+	}
+
+	// up call
 	handle_timer(interval);
 }
 
@@ -666,7 +753,8 @@ void process_udp(int fd)
 		}else if (type == TYPE_ACK) {
 			ret = on_ack(from_IP, from_port, &pkt);
 			if (ret < 0) {
-				Debug("on_ack error %d\n", ret);
+				int ack_num = pkt.header.ack_num;
+				Debug("on_ack %d error %d\n", ack_num, ret);
 			}
 		}else {
 			Debug("unknown TYPE:%d\n", type);

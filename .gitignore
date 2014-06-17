@@ -5,3 +5,4 @@ test_debug
 test_input_buffer
 *.swp
 core
+tags
