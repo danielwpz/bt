@@ -1,6 +1,7 @@
 #include "transport.h"
 #include "handler.h"
 #include "chunk.h"
+#include "spiffy.h"
 #include "debug.h"
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -11,10 +12,12 @@
 
 #define DATA_SIZE 1000
 
-#define INIT_SWS  4
+#define INIT_SWS  1
+#define INIT_SSTHRESH	64
 
 #define RESEND_TIME	(2 * SECOND_TICK)
 #define REACK_TIME	(2 * SECOND_TICK)
+#define RTT_TIME	(SECOND_TICK / 100)
 
 #define MAX_ERR_CNT 7
 
@@ -26,6 +29,9 @@
 #define TYPE_DATA	3
 #define TYPE_ACK	4
 #define TYPE_DENIED	5
+
+#define STAGE_SLOW_START	0
+#define STAGE_CONG_AVOID	1
 
 /********************
  *  Data Structure  *
@@ -62,6 +68,10 @@ struct _STATE {
 	int lfs;		/* Last Frame Sent */
 	int lack_cnt;	/* Count for lack */
 	int *timeout_list;
+	// send window control
+	int cstage;		/* Congestion Control Stage */
+	int ssthresh;	/* Slow Start threshold */
+	int rtt_timeout;/* RTT timer */
 	// receiver
 	int lrf;		/* Last Received Frame */
 	int ack_timeout;
@@ -79,6 +89,7 @@ state_t *kstates_list;	// list of all state structures
 int kid = 1;	// id for state
 
 #define MIN(x, y) ((x) > (y)? (y) : (x))
+#define MAX(x, y) ((x) > (y)? (x) : (y))
 
 /**
  * functions to handle packet
@@ -126,7 +137,7 @@ static int send_packet(in_addr_t IP, short port, packet_t *pkt)
 	addr.sin_port = htons(port);
 	addr.sin_addr.s_addr = IP;
 
-	n = sendto(kfd, &tmpp, pkt->header.pkt_len,
+	n = spiffy_sendto(kfd, &tmpp, pkt->header.pkt_len,
 			0, (struct sockaddr *)&addr, sizeof(addr));
 
 	return n;
@@ -223,6 +234,11 @@ static void init_send_state(state_t *state,
 	state->lfs = -1;
 	state->lack_cnt = 0;
 	state->timeout_list = (int *)malloc(state->max_seq * sizeof(int));
+
+	// set up window control
+	state->cstage = STAGE_SLOW_START;
+	state->ssthresh = INIT_SSTHRESH;
+	state->rtt_timeout = RTT_TIME;
 
 	// set up data
 	state->data = malloc(size);
@@ -324,6 +340,10 @@ static int send_to_up(state_t *state)
 	int lower = state->lfs + 1;
 	int upper = MIN(state->max_seq, (state->laf + state->sws));
 
+	// TEST
+	Debug("[send_to_up]win=%d. lower:%d,upper%d\n", state->sws,
+		   	lower, upper);
+
 	if (upper < lower && (lower <= state->max_seq)) {
 		// TODO: dump_state(state);
 		return TE_WIN;
@@ -342,6 +362,66 @@ static int send_to_up(state_t *state)
 	return TE_OK;
 }
 
+static void adjust_window(state_t *state, int err)
+{
+	int sws = state->sws;
+	int ssthresh = state->ssthresh;
+
+	if (err) {
+		// error occurs
+		// 1. reset ssthresh
+		// 2. begin slow-start
+		state->ssthresh = MAX((sws / 2), 2);
+		state->sws = INIT_SWS;		
+		state->cstage = STAGE_SLOW_START;
+
+	}else {	// no error
+		if (state->cstage == STAGE_SLOW_START) {
+			// no error in slow-start
+			// 1. increase sws by 1
+			// 2. if sws >= ssthresh, 
+			//    turn into congestion ctrl.
+			state->sws++;
+			if (state->sws >= ssthresh) {
+				state->cstage = STAGE_CONG_AVOID;
+			}
+
+		}else {
+			// no error in congestion avoidance
+			// if rtt timeout
+			//    1. increase sws
+			//    2. reset rtt timeout
+			if (state->rtt_timeout <= 0) {
+				state->sws++;
+				state->rtt_timeout = RTT_TIME;
+			}
+		}
+	}
+
+	Debug("[adjust win]sws:%d, ssth:%d\n", state->sws, state->ssthresh);
+}
+
+/**
+ * General failure check here.
+ * Change the congestion state or up-call user
+ */
+static void check_error(state_t *state)
+{
+	state->err_cnt++;
+	if (state->err_cnt > MAX_ERR_CNT) {
+		Debug("[check_error] %d:%d fail.\n", state->IP, state->port);
+		handle_failure(state->IP, state->port);
+		// TODO tear down state
+		deinit_state(state);
+	}else {
+		// TODO not failure, adjust sws
+		adjust_window(state, 1);
+	}
+}
+
+/**
+ * receiver side functions
+ */
 static int reply_ack(in_addr_t IP, 
 		short port, 
 		int ack_num, 
@@ -552,10 +632,19 @@ static int on_ack(in_addr_t IP, short port, packet_t *pkt)
 
 		// fast resend
 		if (state->lack_cnt >= 2) {
-			// reset lfs to resend
+			// error happened
+			// This error won't cause check_error to
+			// generate failure since we reset err_cnt
+			// before, any decision works should be
+			// down by a timer of upper level.
+			// The ONLY reason we call check_error is
+			// to force it to adjust sws and state.
+			check_error(state);
 			// TEST
-			Debug("[on_ack]resend data %d\n", ack_num);
+			Debug("[on_ack]resend data %d\n", ack_num + 1);
+			// reset lfs to resend
 			state->lfs = ack_num;
+			state->lack_cnt = 0;
 		}else {
 			// duplicate ACKs but no need to resend
 			return TE_OK;
@@ -563,6 +652,9 @@ static int on_ack(in_addr_t IP, short port, packet_t *pkt)
 	}else {
 		state->laf = ack_num;
 		state->lack_cnt = 0;
+		// all previous staffs are good,
+		// adjust sws
+		adjust_window(state, 0);
 	}
 
 	ret = send_to_up(state);
@@ -605,7 +697,7 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
 		// TEST
 		// no reply ack
 		static int a = 0;
-		if (seq_num % 64 == 2 && a == 0) {
+		if (seq_num % 64 == 60 && a == 0) {
 			a++;
 			return 0;
 		}else {
@@ -638,6 +730,7 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
 			}
 			deinit_state(state);
 		}
+
 	}else if (seq_num > state->lrf + 1) {
 		// unexpected data, resend last ack
 		ret = reply_ack(IP, port, state->lrf, state);
@@ -651,20 +744,6 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
 }
 
 
-/**
- * General failure check here.
- * Change the congestion state or up-call user
- */
-static void check_error(state_t *state)
-{
-	state->err_cnt++;
-	if (state->err_cnt > MAX_ERR_CNT) {
-		Debug("[check_error] %d:%d fail.\n", state->IP, state->port);
-		handle_failure(state->IP, state->port);
-		// TODO tear down state
-		deinit_state(state);
-	}
-}
 
 /**
  * Interfaces to under layer
@@ -675,6 +754,10 @@ void process_timer(int interval)
 	int from, to;
 	char *desc = "[process_timer]";
 
+	// make up-call first, in case later
+	// codes will generate error or return
+	handle_timer(interval);
+
 	// tranverse states list, update timer
 	for (i = 0; i < kpeer_num; i++) {
 		// check if state[i] is valid
@@ -682,6 +765,7 @@ void process_timer(int interval)
 			int has_error = 0;
 
 			if (kstates_list[i].id > 0) {	// sender
+				// update the timer of each packet
 				from = kstates_list[i].laf + 1;
 				to = kstates_list[i].lfs;
 
@@ -701,6 +785,9 @@ void process_timer(int interval)
 						}
 					}
 				}
+
+				// update RTT
+				kstates_list[i].rtt_timeout -= interval;
 
 			}else if (kstates_list[i].id < 0) {	// receiver
 				kstates_list[i].ack_timeout -= interval;
@@ -730,12 +817,12 @@ void process_timer(int interval)
 
 			if (has_error) {
 				check_error(&kstates_list[i]);
+				// check_error will adjust window
+			}else {
+				adjust_window(&kstates_list[i], 0);
 			}
 		}
 	}
-
-	// up call
-	handle_timer(interval);
 }
 
 void process_udp(int fd)
@@ -753,7 +840,7 @@ void process_udp(int fd)
 	}
 
 	fromlen = sizeof(fromaddr);
-	n = recvfrom(fd, buf, BUFLEN, 0,
+	n = spiffy_recvfrom(fd, buf, BUFLEN, 0,
 			(struct sockaddr *)&fromaddr, &fromlen);
 	if (n < 0) {
 		Debug("recvfrom error %d\n", n);

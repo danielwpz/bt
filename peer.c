@@ -43,7 +43,7 @@ int main(int argc, char **argv) {
 	DPRINTF(DEBUG_INIT, "peer.c main beginning\n");
 
 #ifdef TESTING
-	config.identity = 4; // your group number here
+	config.identity = 1; // your group number here
 	strcpy(config.chunk_file, "chunkfile");
 	strcpy(config.has_chunk_file, "haschunks");
 #endif
@@ -109,7 +109,7 @@ void peer_run(bt_config_t *config) {
 	myaddr.sin_family = AF_INET;
 	myaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	myaddr.sin_port = htons(config->myport);
-	//spiffy_init(config->identity, (struct sockaddr *)&myaddr, sizeof(myaddr));
+	spiffy_init(config->identity, (struct sockaddr *)&myaddr, sizeof(myaddr));
 
 	while (1) {
 		int nfds;
