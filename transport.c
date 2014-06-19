@@ -418,12 +418,10 @@ int send_data(in_addr_t IP, short port, void *buf, size_t size)
 	char *desc = "[send_data]";
 	state_t *state;
 
-	/* Test mode
 	if (size != BT_CHUNK_SIZE) {
-		Debug("data size invalid %d\n", size);
+		Debug("%sdata size invalid %d\n", desc, (int)size);
 		return TE_SIZE;
 	}
-	*/
 	
 	// check whether there is come connections with
 	// given peer
@@ -639,6 +637,13 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
 				return ret;
 			}
 			deinit_state(state);
+		}
+	}else if (seq_num > state->lrf + 1) {
+		// unexpected data, resend last ack
+		ret = reply_ack(IP, port, state->lrf, state);
+		if (ret < 0) {
+			Debug("%sreply_ack error %d\n", desc, ret);
+			return ret;
 		}
 	}
 
