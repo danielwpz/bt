@@ -52,9 +52,9 @@ void hd_init(bt_config_t* config_ptr, in_addr_t IP) {
 
 	FILE *f;
 
-	if ((f = fopen(config->output_file, "wb+")) == NULL)
-		Debug("config->output_file create failed\n");
-	fclose(f);
+	//if ((f = fopen(config->output_file, "wb+")) == NULL)
+	//	Debug("config->output_file create failed\n");
+	//fclose(f);
 
 	if ((f = fopen(config->has_chunk_file, "r")) == NULL) 
 		Debug("config->has_chunk_file doesn't exist\n");
@@ -351,7 +351,7 @@ int handle_recv(in_addr_t IP, short port, void *buf, size_t size)
 			
 			//写文件
 			void *ptr;
-			if ((fd = open(config->output_file, O_RDWR)) < 0)
+			if ((fd = open(config->output_file, O_RDWR|O_CREAT)) < 0)
 				Debug("config->output_file OPEN failed\n");
 			if ((ptr=mmap(NULL, (*target_hash)*BT_CHUNK_SIZE , PROT_READ|PROT_WRITE,
 					MAP_SHARED , fd, 0))<0)
