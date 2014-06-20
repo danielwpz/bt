@@ -324,7 +324,9 @@ int handle_recv(in_addr_t IP, short port, void *buf, size_t size)
 
 	int fd;
 	uint8_t *temp;
-	shahash(temp, (int)size, (uint8_t *)buf);
+	//shahash(temp, (int)size, (uint8_t *)buf);
+	Debug("%sbefore shahash\n", desc);
+	shahash((uint8_t *)buf, (int)size, temp);
 
 	print_packet(temp, SHA1_HASH_SIZE);
 	int i;
