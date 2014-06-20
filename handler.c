@@ -11,6 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <fcntl.h>
 
 uint8_t *target_hash;
 bt_config_t *config;
