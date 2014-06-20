@@ -291,6 +291,7 @@ int handle_get(in_addr_t IP, short port, void *buf, size_t size)
 			}
 			if ((sendbuf=mmap(NULL, (*i_have_hash)*BT_CHUNK_SIZE , PROT_READ|PROT_WRITE, MAP_SHARED , fd, 0))<0)
 				Debug("mmap error in %s ptr:%p",desc,sendbuf);
+			Debug("%s ptr:%p",desc,sendbuf);
 			index = i;
 			break;
 		}
