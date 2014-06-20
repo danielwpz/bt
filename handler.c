@@ -282,6 +282,7 @@ int handle_get(in_addr_t IP, short port, void *buf, size_t size)
 	int i;
 	for(i = 0; i < *i_have_hash; i++) {
 		if (compare_hash(i_have_hash+4+i*SHA1_HASH_SIZE, (uint8_t *)buf)) {
+			Debug("%s %d\n",desc, i);
 			if ((f = fopen(i_have_filename, "r")) == NULL) {
 				Debug("I_have_filename:%s doesn't exist\n",i_have_filename);
 				return HE_NOFILE;
@@ -292,10 +293,10 @@ int handle_get(in_addr_t IP, short port, void *buf, size_t size)
 			break;
 		}
 	}
-
+	Debug("%s send data start\n",desc);
 	if ((send_data(IP, port, sendbuf+index*BT_CHUNK_SIZE, BT_CHUNK_SIZE))<0)
 		Debug("send_data failed");
-
+	Debug("%s send data end\n",desc);
 	if ((munmap(sendbuf, (*i_have_hash)*BT_CHUNK_SIZE))<0)
 		Debug("munmap failed");
 	fclose(f);
