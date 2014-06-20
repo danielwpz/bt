@@ -37,6 +37,8 @@ void hd_init(bt_config_t* config_ptr, in_addr_t IP) {
 	bzero(i_have_hash, BUF_LEN*SHA1_HASH_SIZE+4);
 	bzero(target_peer, sizeof(a_peer)*BUF_LEN);
 
+	
+
 	FILE *f;
 	if ((f = fopen(config->has_chunk_file, "r")) == NULL) 
 		Debug("config->has_chunk_file doesn't exist\n");
@@ -98,9 +100,6 @@ int handle_cmd(char *cmd)
 	while (temp!=NULL) {
 		Debug("id:%d\n", temp->id);
 		if (temp->id!=config->identity) {
-			Debug("Hello\n");
-			Debug("addr:%x\n", temp->addr.sin_addr.s_addr);
-			Debug("port:%d\n", ntohs(temp->addr.sin_port));
 			send_whohas(temp->addr.sin_addr.s_addr, ntohs(temp->addr.sin_port), target_hash, (*target_hash) * SHA1_HASH_SIZE+4);
 		}
 		temp  = temp->next;
@@ -131,7 +130,7 @@ int handle_whohas(in_addr_t IP, short port, void *buf, size_t size)
 	uint8_t *i_have;
 	i_have = (uint8_t *) malloc(BUF_LEN*SHA1_HASH_SIZE+4);
 	*i_have = 0;
-
+	print_packet((uint8_t *)buf, (int)size);
 	uint8_t j;
 	j = *(uint8_t *)buf;
 	int i,k;
@@ -146,6 +145,8 @@ int handle_whohas(in_addr_t IP, short port, void *buf, size_t size)
 			}
 		}
 	}
+	Debug("I have:\n");
+	print_packet(i_have, 4+i_have[0]*SHA1_HASH_SIZE);
 
 	if (have) 
 		send_ihave(IP, port, i_have, 4+i_have[0]*SHA1_HASH_SIZE);
@@ -215,7 +216,7 @@ int handle_get(in_addr_t IP, short port, void *buf, size_t size)
 	char *IPStr = inet_ntoa(addr);
 
 	Debug("%s(%s, %d, %d)\n", desc, IPStr, port, (int)size);
-	Debug("%s\n", (char *)buf);
+	print_packet((uint8_t *)buf, (int)size);
 
 	return HE_OK;
 }
@@ -276,10 +277,16 @@ int read_chunks(FILE *f, uint8_t *hash_list) {
 	while (fgets(line, BUF_LEN, f) != NULL) {
     	if (sscanf(line, "%d %s", &index, hash_string) == 0) 
 			Debug("read index & hash_string error\n");
-		binary2hex(hash_list+index*SHA1_HASH_SIZE+4, strlen(hash_string),
-				hash_string);
+		hex2binary(hash_string, strlen(hash_string),
+				hash_list+index*SHA1_HASH_SIZE+4);
 	}
+	
 	*hash_list = index+1;
+	int i;
+	for (i = 0; i < (index+1)*SHA1_HASH_SIZE+4;i++) {
+		Debug("%x",*(hash_list+i));
+	}
+	Debug("\n");
 	return 0;
 }
 
@@ -289,6 +296,7 @@ int compare_hash(uint8_t *a, uint8_t *b) {
 	int same = 1;
 	int i;
 	for (i = 0; i < SHA1_HASH_SIZE; i++) {
+		//Debug("a:%x b:%x\n",*(a+i),*(b+i));
 		if (*(a+i)!=*(b+i)) {
 			same = 0;
 			break;
@@ -296,4 +304,13 @@ int compare_hash(uint8_t *a, uint8_t *b) {
 	}
 	Debug("Comparing hash: %d\n", same);
 	return same;
+}
+
+void print_packet(uint8_t *buf, int size) {
+	int i;
+	Debug("printpacket:");
+	for (i = 0; i < size;i++) {
+		Debug("%x",*(buf+i));
+	}
+	Debug("\n");
 }
