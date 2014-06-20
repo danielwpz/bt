@@ -57,7 +57,6 @@ int handle_cmd(char *cmd)
 	char *desc = "[hdl_cmd]";
 
 	Debug("%s%s\n", desc, cmd);
-
 	send_init(count_peers(), config->myport);
 
 	FILE *f;
@@ -101,6 +100,7 @@ int handle_cmd(char *cmd)
 	bt_peer_t *temp = config->peers;
 	
 	while (temp!=NULL) {
+		Debug("id:%d\n", temp->id);
 		send_whohas(temp->addr.sin_addr.s_addr, temp->addr.sin_port, target_hash, (*target_hash) * SHA1_HASH_SIZE+4);
 		temp  = temp->next;
 	}
