@@ -50,8 +50,15 @@ int main(int argc, char **argv) {
 	}
 #endif
 
-	/* TODO: fill in peers num and local port */
-	send_init(0, 11234);
+	int q = 0;
+	bt_peer_t *temp = config.peers;
+	while (temp!=NULL) {
+		temp = temp->next;
+		q++;
+	}
+	Debug("count_peers: %d\n", q-1);
+	Debug("myport:%d\n", config.myport);
+	send_init(q-1, config.myport);
 
 	peer_run(&config);
 	return 0;
@@ -92,7 +99,7 @@ void peer_run(bt_config_t *config) {
 	myaddr.sin_family = AF_INET;
 	myaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	myaddr.sin_port = htons(config->myport);
-	//spiffy_init(config->identity, (struct sockaddr *)&myaddr, sizeof(myaddr));
+	spiffy_init(config->identity, (struct sockaddr *)&myaddr, sizeof(myaddr));
 
 	hd_init(config, htonl(INADDR_ANY));
 	while (1) {

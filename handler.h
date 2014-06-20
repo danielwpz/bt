@@ -10,6 +10,7 @@
  */
 #define HE_OK 0
 #define HE_INVAL -1
+#define HE_NOFILE -2 //i_have_file
 
 /**
  * Command Length
@@ -21,6 +22,7 @@ typedef struct available_peer {
   in_addr_t IP;
   short port;
   int valid;
+  int sending;
   struct available_peer *next;
 } a_peer;
 
