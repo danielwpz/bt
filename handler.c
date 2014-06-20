@@ -278,7 +278,7 @@ int handle_get(in_addr_t IP, short port, void *buf, size_t size)
 	print_packet((uint8_t *)buf, (int)size);
 
 	int fd;
-	char *sendbuf;
+	void *sendbuf;
 	int index = 0;
 	int i;
 	for(i = 0; i < *i_have_hash; i++) {
@@ -324,18 +324,28 @@ int handle_recv(in_addr_t IP, short port, void *buf, size_t size)
 
 	int fd;
 	uint8_t *temp;
-	//shahash(temp, (int)size, (uint8_t *)buf);
-	Debug("%sbefore shahash\n", desc);
-	shahash((uint8_t *)buf, (int)size, temp);
-
-	print_packet(temp, SHA1_HASH_SIZE);
 	int i;
-	for(i = 0; i < *target_hash; i++) {
-		if (compare_hash(target_hash+4+i*SHA1_HASH_SIZE, temp)) {
-			recv_result[i] = 1;
-			target_peer[i].valid = 0;
-			target_peer[i].sending = 0;
-			freelinkedlist(target_peer[i].next);
+	int record; //传来的chunk在target中的索引值
+	int qwe = 0;//辅助变量
+	for (i = 0; i < *target_hash; i++) {
+		a_peer *peer_t;
+		peer_t = target_peer+i*sizeof(a_peer);
+		while (peer_t!=NULL) {
+			if (peer_t->IP==IP && peer_t->port==port && peer_t->sending==1) {
+				qwe = 1;
+			}
+			peer_t = peer_t->next;
+		}
+		if (qwe) {
+			record = i;
+			break;
+		}
+	}
+
+			recv_result[record] = 1;
+			target_peer[record].valid = 0;
+			target_peer[record].sending = 0;
+			freelinkedlist(target_peer[record].next);
 			
 			
 			//写文件
@@ -350,12 +360,7 @@ int handle_recv(in_addr_t IP, short port, void *buf, size_t size)
 			munmap(ptr, (*target_hash)*BT_CHUNK_SIZE);
 			close(fd);
 
-			break;
-		}
-	}
-
-
-
+	
 
 	for(i = 0; i < *target_hash; i++) {
 		if (!recv_result[i]) {
