@@ -286,11 +286,13 @@ static void deinit_state(state_t *state)
 	state->IP = 0;
 	state->port = 0;
 
-	if (state->id > 0) {
-		free(state->timeout_list);
-	}
+	if (state->id != 0) {
+		if (state->id > 0) {
+			//free(state->timeout_list);
+		}
 
-	free(state->data);
+		//free(state->data);
+	}
 
 	state->id = 0;
 }

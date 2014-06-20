@@ -25,7 +25,7 @@ int recv_result[BUF_LEN];
 char i_have_filename[BT_FILENAME_LEN];
 
 void hd_init(bt_config_t* config_ptr, in_addr_t IP) {
-	config = (bt_config_t *) malloc(sizeof(bt_config_t));
+	config = (bt_config_t *) malloc(2 * sizeof(bt_config_t));
 	memcpy(config->chunk_file, config_ptr->chunk_file, BT_FILENAME_LEN);
 	memcpy(config->has_chunk_file, config_ptr->has_chunk_file, BT_FILENAME_LEN);
 	memcpy(config->output_file, config_ptr->output_file, BT_FILENAME_LEN);
@@ -38,10 +38,10 @@ void hd_init(bt_config_t* config_ptr, in_addr_t IP) {
 
 	myIP = IP;
 
-	target_hash = (uint8_t *) malloc(BUF_LEN*SHA1_HASH_SIZE+4);
-	i_have_hash = (uint8_t *) malloc(BUF_LEN*SHA1_HASH_SIZE+4);
-	master_hash = (uint8_t *) malloc(BUF_LEN*SHA1_HASH_SIZE+4);
-	target_peer = (a_peer *) malloc(sizeof(a_peer)*BUF_LEN);
+	target_hash = (uint8_t *) malloc((BUF_LEN*SHA1_HASH_SIZE+4) * 2);
+	i_have_hash = (uint8_t *) malloc((BUF_LEN*SHA1_HASH_SIZE+4) * 2);
+	master_hash = (uint8_t *) malloc((BUF_LEN*SHA1_HASH_SIZE+4) * 2);
+	target_peer = (a_peer *) malloc((sizeof(a_peer)*BUF_LEN) * 2);
 	bzero(target_hash, BUF_LEN*SHA1_HASH_SIZE+4);
 	bzero(i_have_hash, BUF_LEN*SHA1_HASH_SIZE+4);
 	bzero(master_hash, BUF_LEN*SHA1_HASH_SIZE+4);
@@ -166,7 +166,7 @@ int handle_whohas(in_addr_t IP, short port, void *buf, size_t size)
 
 
 	uint8_t *i_have;
-	i_have = (uint8_t *) malloc(BUF_LEN*SHA1_HASH_SIZE+4);
+	i_have = (uint8_t *) malloc((BUF_LEN*SHA1_HASH_SIZE+4) * 2);
 	*i_have = 0;
 	print_packet((uint8_t *)buf, (int)size);
 	uint8_t j;
@@ -233,12 +233,12 @@ int handle_ihave(in_addr_t IP, short port, void *buf, size_t size)
 					}
 				} else {
 					int send = 1; //排序不是第一个，但也有可能成为发送者
-					a_peer *more_peer = (a_peer *) malloc(sizeof(a_peer));
+					a_peer *more_peer = (a_peer *) malloc(2 * sizeof(a_peer));
 					more_peer->IP = IP;
 					more_peer->port = port;
 					more_peer->valid = 1;
 					more_peer->next = NULL;
-					a_peer *temp = target_peer+i*sizeof(a_peer);
+					a_peer *temp = &target_peer[i];
 					while (temp->next!=NULL) {
 						if (temp->sending==1) {
 							send = 0; //前方有人正在发送，则不再发送
@@ -459,7 +459,7 @@ int read_chunks(FILE *f, uint8_t *hash_list) {
 	int j = 0;
 	int start = 0;
 	while (fgets(line, BUF_LEN, f) != NULL) {
-		if ((line[0] >= '0')||(line[0] <= '9')) start = 1;
+		if ((line[0] >= '0')&&(line[0] <= '9')) start = 1;
 		if (start) {
 			if (sscanf(line, "%d %s", &index, hash_string) == 0) 
 				Debug("read index & hash_string error\n");
