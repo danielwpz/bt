@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 #include <stdlib.h>
 
-#define DATA_SIZE 1000
+#define DATA_SIZE 1400
 
 #define INIT_SWS  1
 #define INIT_SSTHRESH	64
@@ -128,8 +128,8 @@ static int send_packet(in_addr_t IP, short port, packet_t *pkt)
 	tmpp.header.magic = htons(pkt->header.magic);
 	tmpp.header.hdr_len = htons(pkt->header.hdr_len);
 	tmpp.header.pkt_len = htons(pkt->header.pkt_len);
-	tmpp.header.seq_num = htonl(pkt->header.seq_num);
-	tmpp.header.ack_num = htonl(pkt->header.ack_num);
+	tmpp.header.seq_num = htonl(pkt->header.seq_num + 1);
+	tmpp.header.ack_num = htonl(pkt->header.ack_num + 1);
 
 	// construct dest addr
 	struct sockaddr_in addr;
@@ -153,8 +153,8 @@ static int recv_packet(packet_t *pkt, void *buf)
 	pkt->header.type = tmpp->header.type;
 	pkt->header.hdr_len = ntohs(tmpp->header.hdr_len);
 	pkt->header.pkt_len = ntohs(tmpp->header.pkt_len);
-	pkt->header.seq_num = ntohl(tmpp->header.seq_num);
-	pkt->header.ack_num = ntohl(tmpp->header.ack_num);
+	pkt->header.seq_num = ntohl(tmpp->header.seq_num) - 1;
+	pkt->header.ack_num = ntohl(tmpp->header.ack_num) - 1;
 
 	// check valid
 	if (pkt->header.magic != MAGIC_NUM ||
@@ -228,6 +228,7 @@ static void init_send_state(state_t *state,
 	}
 	state->max_seq--;	// actual seq begins from 0
 
+	Debug("[init_send_s]before 1\n");
 	// set up send field
 	state->sws = INIT_SWS;
 	state->laf = -1;
@@ -246,6 +247,7 @@ static void init_send_state(state_t *state,
 		Debug("[init_send_state]malloc data failed\n");
 		return;
 	}
+	Debug("[init_send_s]before memcpy(%p, %p, %d)\n", state->data, buf, size);
 	memcpy(state->data, buf, size);
 }
 
@@ -497,6 +499,7 @@ int send_data(in_addr_t IP, short port, void *buf, size_t size)
 	int ret;
 	char *desc = "[send_data]";
 	state_t *state;
+	Debug("%s(%d:%d, size:%d)\n", desc, IP, port, size);
 
 	if (size != BT_CHUNK_SIZE) {
 		Debug("%sdata size invalid %d\n", desc, (int)size);
@@ -505,6 +508,7 @@ int send_data(in_addr_t IP, short port, void *buf, size_t size)
 	
 	// check whether there is come connections with
 	// given peer
+	Debug("%sbefore search_state\n", desc);
 	state = search_state(IP, port);
 	if (state) {
 		Debug("%salready connect with %d:%d\n",desc, IP, port);
@@ -512,14 +516,17 @@ int send_data(in_addr_t IP, short port, void *buf, size_t size)
 	}
 
 	// use a new state
+	Debug("%sbefore find_free_state\n", desc);
 	state = find_free_state();
 	if (state == NULL) {
 		Debug("%sNO empty state\n", desc);
 		return TE_FULL;
 	}
 
+	Debug("%sbefore init_send_state\n", desc);
 	init_send_state(state, IP, port, buf, size);
 
+	Debug("%sbefore send_to_up\n", desc);
 	ret = send_to_up(state);
 	if (ret < 0) {
 		Debug("%ssend_to_up error %d\n", desc, ret);
@@ -696,6 +703,7 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
 	if (seq_num == state->lrf + 1) {
 		// TEST
 		// no reply ack
+		/*
 		static int a = 0;
 		if (seq_num % 64 == 60 && a == 0) {
 			a++;
@@ -703,6 +711,7 @@ static int on_data(in_addr_t IP, short port, packet_t *pkt)
 		}else {
 			a = 0;
 		}
+		*/
 
 		// record data
 		memcpy((state->data + (seq_num * DATA_SIZE)),
