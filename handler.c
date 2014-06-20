@@ -46,9 +46,9 @@ void hd_init(bt_config_t* config_ptr, in_addr_t IP) {
 	bzero(i_have_hash, BUF_LEN*SHA1_HASH_SIZE+4);
 	bzero(master_hash, BUF_LEN*SHA1_HASH_SIZE+4);
 	bzero(target_peer, sizeof(a_peer)*BUF_LEN);
-	
 
-	
+
+
 
 	FILE *f;
 
@@ -93,37 +93,38 @@ int handle_cmd(char *cmd)
 
 	FILE *f;
 	unsigned long file_length;
-	
+
 	char command[BUF_LEN];
 	char target_file[BT_FILENAME_LEN];
 	char rename_file[BT_FILENAME_LEN];
 	bzero(target_file, BT_FILENAME_LEN*sizeof(char));
 	bzero(rename_file, BT_FILENAME_LEN*sizeof(char));
-	
+
 
 	int index;
-	
+
 
 	int count = 0;
 
 	if (sscanf(cmd, "%s %s %s", command, target_file, rename_file) == 0)
 		Debug("Can't read command GET <target-file>\n");
-	
+
 
 	if (strcasecmp(command, "get") == 0) {
 		if (rename_file[0]!='\0') {
-		if (target_file[0]!='\0') {
-			if ((f = fopen(target_file, "r")) == NULL) {
-				Debug("%s doesn't exist\n", target_file);
-				
+			if (target_file[0]!='\0') {
+				if ((f = fopen(target_file, "r")) == NULL) {
+					Debug("%s doesn't exist\n", target_file);
+
+				}
+				read_chunks(f, target_hash);
+				if (memcpy(config->output_file, rename_file, strlen(rename_file)) < 0)
+					Debug("rename_file copy fail\n");
+				config->output_file[strlen(rename_file)] = 0;
+
+			} else {
+				Debug("second command argument error\n");
 			}
-			read_chunks(f, target_hash);
-			if (memcpy(config->output_file, rename_file, strlen(rename_file)) < 0)
-				Debug("rename_file copy fail\n");
-			
-		} else {
-			Debug("second command argument error\n");
-		}
 		} else {
 			Debug("third command argument error\n");
 		}
@@ -137,13 +138,13 @@ int handle_cmd(char *cmd)
 		Debug("id:%d\n", temp->id);
 		if (temp->id!=config->identity) {
 			send_whohas(temp->addr.sin_addr.s_addr, ntohs(temp->addr.sin_port), target_hash, (*target_hash) * SHA1_HASH_SIZE+4);
-			
+
 		}
 		temp  = temp->next;
 	}
 
-	
-	
+
+
 	return HE_OK;
 }
 
@@ -163,7 +164,7 @@ int handle_whohas(in_addr_t IP, short port, void *buf, size_t size)
 	Debug("%s(%s, %d, %d)\n", desc, IPStr, port, (int)size);
 	//Debug("%s\n", (char *)buf);
 
-	
+
 	uint8_t *i_have;
 	i_have = (uint8_t *) malloc(BUF_LEN*SHA1_HASH_SIZE+4);
 	*i_have = 0;
@@ -215,8 +216,9 @@ int handle_ihave(in_addr_t IP, short port, void *buf, size_t size)
 	for(i = 0; i < *target_hash; i++) {
 		for (j = 0; j < *(uint8_t *)buf; j++) {
 			if (compare_hash(target_hash+4+i*SHA1_HASH_SIZE, (uint8_t *)buf+4+j*SHA1_HASH_SIZE) && (!recv_result[i])) {
-				
+
 				if (!target_peer[i].valid) {
+					Debug("record target peer(%d):%d\n", i, port);
 					target_peer[i].IP = IP;
 					target_peer[i].port = port;
 					target_peer[i].valid = 1;
@@ -224,7 +226,7 @@ int handle_ihave(in_addr_t IP, short port, void *buf, size_t size)
 					if (!lock) {
 						target_peer[i].sending = 1;
 						send_get(IP, port, target_hash+4+i*SHA1_HASH_SIZE,
-							SHA1_HASH_SIZE);
+								SHA1_HASH_SIZE);
 						lock = 1;  //连续的下一次不能再发送
 					} else {
 						target_peer[i].sending = 0;
@@ -246,7 +248,7 @@ int handle_ihave(in_addr_t IP, short port, void *buf, size_t size)
 					if (send && !lock) {
 						more_peer->sending = 1;
 						send_get(IP, port, target_hash+4+i*SHA1_HASH_SIZE,
-							SHA1_HASH_SIZE);
+								SHA1_HASH_SIZE);
 						lock = 1;
 					} else {
 						more_peer->sending = 0;
@@ -278,30 +280,34 @@ int handle_get(in_addr_t IP, short port, void *buf, size_t size)
 	print_packet((uint8_t *)buf, (int)size);
 
 	int fd;
-	void *sendbuf;
+	char sendbuf[BT_CHUNK_SIZE];
 	int index = 0;
 	int i;
 	for(i = 0; i < *i_have_hash; i++) {
 		if (compare_hash(i_have_hash+4+i*SHA1_HASH_SIZE, (uint8_t *)buf)) {
 
-			if (fd = open(i_have_filename, O_RDONLY)<0) {
+			if ((fd = open(i_have_filename, O_RDWR))<0) {
 
 				Debug("I_have_filename:%s doesn't exist\n",i_have_filename);
 				return HE_NOFILE;
 			}
+			Debug("%slseek(%s, fd=%d, i=%d)\n", desc, i_have_filename, fd, i);
+			lseek(fd, i*BT_CHUNK_SIZE, SEEK_SET);
+			Debug("%sbefore read\n", desc);
+			read(fd, (void *)&sendbuf, BT_CHUNK_SIZE);
+
+/*
 			if ((sendbuf=mmap(NULL, (*i_have_hash)*BT_CHUNK_SIZE , PROT_READ|PROT_WRITE, MAP_SHARED , fd, 0))<0)
 				Debug("mmap error in %s ptr:%p",desc,sendbuf);
 			Debug("%s ptr:%p",desc,sendbuf);
 			index = i;
-			break;
+			break;*/
 		}
 	}
 	Debug("%s send data start\n",desc);
-	if ((send_data(IP, port, sendbuf+index*BT_CHUNK_SIZE, BT_CHUNK_SIZE))<0)
+	if ((send_data(IP, port, sendbuf, BT_CHUNK_SIZE))<0)
 		Debug("send_data failed");
 	Debug("%s send data end\n",desc);
-	if ((munmap(sendbuf, (*i_have_hash)*BT_CHUNK_SIZE))<0)
-		Debug("munmap failed");
 	close(fd);
 	return HE_OK;
 }
@@ -330,7 +336,7 @@ int handle_recv(in_addr_t IP, short port, void *buf, size_t size)
 	int qwe = 0;//辅助变量
 	for (i = 0; i < *target_hash; i++) {
 		a_peer *peer_t;
-		peer_t = target_peer+i*sizeof(a_peer);
+		peer_t = target_peer+i;
 		while (peer_t!=NULL) {
 			if (peer_t->IP==IP && peer_t->port==port && peer_t->sending==1) {
 				qwe = 1;
@@ -343,32 +349,58 @@ int handle_recv(in_addr_t IP, short port, void *buf, size_t size)
 		}
 	}
 
-			recv_result[record] = 1;
-			target_peer[record].valid = 0;
-			target_peer[record].sending = 0;
-			freelinkedlist(target_peer[record].next);
-			
-			
-			//写文件
-			void *ptr;
-			if ((fd = open(config->output_file, O_RDWR|O_CREAT)) < 0)
-				Debug("config->output_file OPEN failed\n");
-			if ((ptr=mmap(NULL, (*target_hash)*BT_CHUNK_SIZE , PROT_READ|PROT_WRITE,
-					MAP_SHARED , fd, 0))<0)
-				Debug("mmap error in %s\n",desc);
-			if (memcpy(ptr+i*BT_CHUNK_SIZE, buf, size)<0)
-				Debug("Write file failed\n");
-			munmap(ptr, (*target_hash)*BT_CHUNK_SIZE);
-			close(fd);
+	recv_result[record] = 1;
+	target_peer[record].valid = 0;
+	target_peer[record].sending = 0;
+	freelinkedlist(target_peer[record].next);
 
-	
+
+	//写文件
+	void *ptr;
+	char *file_name = config->output_file;
+	Debug("%soutput: %s\n", desc, config->output_file);
+	if ((fd = open(config->output_file, O_RDWR|O_CREAT)) < 0) {
+		perror("open");
+		Debug("config->output_file OPEN failed\n");
+	}
+
+	Debug("%slseek(%d)\n", desc, record);
+	if (lseek(fd, record * BT_CHUNK_SIZE, SEEK_SET) < 0) {
+		Debug("%slseek error\n", desc);
+	}
+
+	if (write(fd, buf, size) < 0) {
+		Debug("%swrite error\n", desc);
+	}
+		
+	/*
+	Debug("%s before mmap fd:%d\n", desc, fd);
+	if ((ptr=mmap(NULL, (*target_hash)*BT_CHUNK_SIZE , PROT_READ|PROT_WRITE,
+					MAP_SHARED , fd, 0))<0)
+		Debug("mmap error in %s\n",desc);
+
+	Debug("%s before memcpy (%p, %p, %d)\n", desc,
+			ptr + (i * BT_CHUNK_SIZE), buf, size);
+
+	if (memcpy(ptr+i*BT_CHUNK_SIZE, buf, size)<0)
+		Debug("Write file failed\n");
+
+	Debug("%s before mnumap\n", desc);
+	munmap(ptr, (*target_hash)*BT_CHUNK_SIZE);
+	*/
+	close(fd);
+
+	Debug("In target_peer1 %d %d\n", target_peer[1].port,target_peer[1].valid);
 
 	for(i = 0; i < *target_hash; i++) {
 		if (!recv_result[i]) {
+			Debug("%s in recv_result %d\n", desc, i);
 			int send = 0;
-			a_peer *temp2 = target_hash + i * sizeof(a_peer);
+			a_peer *temp2 = &target_peer[i];
+			Debug("addr temp2:%x target_peer:%x\n",temp2,target_peer+i);
 			a_peer *temp3;
 			while (temp2!=NULL) {
+				Debug("%s temp2: port %d, valid %d\n", desc, temp2->port, temp2->valid);
 				if (temp2->IP==IP&&temp2->port==port&&(temp2->valid)) {
 					send = 1;
 					temp3 = temp2;
@@ -378,8 +410,10 @@ int handle_recv(in_addr_t IP, short port, void *buf, size_t size)
 				temp2 = temp2->next;
 			}
 			if(send) {
+				Debug("%ssend_get(%d, %d, %p, %d)\n", desc, IP, port, 
+					target_hash+4+i*SHA1_HASH_SIZE, SHA1_HASH_SIZE);
 				send_get(IP, port, target_hash+4+i*SHA1_HASH_SIZE,
-							SHA1_HASH_SIZE);
+						SHA1_HASH_SIZE);
 				temp3->sending = 1;
 			}
 
@@ -427,14 +461,14 @@ int read_chunks(FILE *f, uint8_t *hash_list) {
 	while (fgets(line, BUF_LEN, f) != NULL) {
 		if ((line[0] >= '0')||(line[0] <= '9')) start = 1;
 		if (start) {
-    		if (sscanf(line, "%d %s", &index, hash_string) == 0) 
+			if (sscanf(line, "%d %s", &index, hash_string) == 0) 
 				Debug("read index & hash_string error\n");
 			hex2binary(hash_string, strlen(hash_string),
 					hash_list+j*SHA1_HASH_SIZE+4);
 			j++;
 		}
 	}
-	
+
 	*hash_list = index+1;
 	int i;
 	for (i = 0; i < (index+1)*SHA1_HASH_SIZE+4;i++) {
@@ -473,7 +507,7 @@ void freelinkedlist(a_peer *head) {
 	if (head == NULL)
 		return;
 	freelinkedlist(head->next);
-	
+
 	if (head->next==NULL) {
 		free(head);
 		head = NULL;
