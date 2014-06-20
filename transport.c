@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 #include <stdlib.h>
 
-#define DATA_SIZE 1000
+#define DATA_SIZE 1400
 
 #define INIT_SWS  1
 #define INIT_SSTHRESH	64
