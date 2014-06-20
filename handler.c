@@ -276,17 +276,17 @@ int handle_get(in_addr_t IP, short port, void *buf, size_t size)
 	Debug("%s(%s, %d, %d)\n", desc, IPStr, port, (int)size);
 	print_packet((uint8_t *)buf, (int)size);
 
-	FILE *f;
+	int fd;
 	char *sendbuf;
 	int index = 0;
 	int i;
 	for(i = 0; i < *i_have_hash; i++) {
 		if (compare_hash(i_have_hash+4+i*SHA1_HASH_SIZE, (uint8_t *)buf)) {
-			if ((f = fopen(i_have_filename, "r")) == NULL) {
+			if (fd = open(i_have_filename, O_RDONLY)<0) {
 				Debug("I_have_filename:%s doesn't exist\n",i_have_filename);
 				return HE_NOFILE;
 			}
-			if ((sendbuf=mmap(NULL, (*i_have_hash)*BT_CHUNK_SIZE , PROT_READ|PROT_WRITE, MAP_SHARED , f, 0))<0)
+			if ((sendbuf=mmap(NULL, (*i_have_hash)*BT_CHUNK_SIZE , PROT_READ|PROT_WRITE, MAP_SHARED , fd, 0))<0)
 				Debug("mmap error in %s",desc);
 			index = i;
 			break;
@@ -298,7 +298,7 @@ int handle_get(in_addr_t IP, short port, void *buf, size_t size)
 
 	if ((munmap(sendbuf, (*i_have_hash)*BT_CHUNK_SIZE))<0)
 		Debug("munmap failed");
-	fclose(f);
+	close(fd);
 	return HE_OK;
 }
 
@@ -319,7 +319,7 @@ int handle_recv(in_addr_t IP, short port, void *buf, size_t size)
 	Debug("%s(%s, %d, %d)\n", desc, IPStr, port, (int)size);
 	//Debug("%s\n", (char *)buf);
 
-	FILE *f;
+	int fd;
 	uint8_t *temp;
 	shahash(temp, (int)size, (uint8_t *)buf);
 
@@ -335,15 +335,15 @@ int handle_recv(in_addr_t IP, short port, void *buf, size_t size)
 			
 			//写文件
 			void *ptr;
-			if ((f = fopen(config->output_file, "rw")) == NULL)
+			if ((fd = open(config->output_file, O_RDWR)) < 0)
 				Debug("config->output_file OPEN failed\n");
 			if ((ptr=mmap(NULL, (*target_hash)*BT_CHUNK_SIZE , PROT_READ|PROT_WRITE,
-					MAP_SHARED , f, 0))<0)
+					MAP_SHARED , fd, 0))<0)
 				Debug("mmap error in %s\n",desc);
 			if (memcpy(ptr+i*BT_CHUNK_SIZE, buf, size)<0)
 				Debug("Write file failed\n");
 			munmap(ptr, (*target_hash)*BT_CHUNK_SIZE);
-			fclose(f);
+			close(fd);
 
 			break;
 		}
