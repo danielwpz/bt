@@ -411,14 +411,16 @@ int read_chunks(FILE *f, uint8_t *hash_list) {
 	char line[BUF_LEN];
 	char hash_string[BUF_LEN];
 	int index;
+	int j = 0;
 	int start = 0;
 	while (fgets(line, BUF_LEN, f) != NULL) {
-		if (line[0] == '0') start = 1;
+		if ((line[0] >= '0')||(line[0] <= '9')) start = 1;
 		if (start) {
     		if (sscanf(line, "%d %s", &index, hash_string) == 0) 
 				Debug("read index & hash_string error\n");
 			hex2binary(hash_string, strlen(hash_string),
-					hash_list+index*SHA1_HASH_SIZE+4);
+					hash_list+j*SHA1_HASH_SIZE+4);
+			j++;
 		}
 	}
 	
